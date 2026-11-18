@@ -1,16 +1,3 @@
-"""
-src/ablation_and_error_tv2.py — Script chuẩn bị sẵn cho TV2 (Phase 4 & Phase 5C, 5D)
-Bao gồm:
-  1. Nghiên cứu cắt bỏ đặc trưng (Ablation Study - mục 5C) trên tập Validation:
-     - Full model (cấu hình đầy đủ)
-     - Bỏ Target Encoding (drop te_route, te_flight)
-     - Thay Target Encoding bằng Frequency Encoding (thay te_route, te_flight bằng log_freq_from, log_freq_to, log_freq_flight)
-     - Bỏ Mật độ chuyến bay (drop density_from, density_to)
-     - Bỏ toàn bộ các đặc trưng Route (drop te_route, log_freq_route)
-  2. Phân tích lỗi theo lát cắt (Slice Error Analysis - mục 5D) trên tập Validation:
-     - Tính ROC-AUC, Recall, Delay Rate theo Hãng bay (Airline), Khung giờ (hour), và Top 20 Sân bay (AirportFrom).
-"""
-
 import os
 import pandas as pd
 from pyspark.sql import DataFrame, functions as F
@@ -98,10 +85,7 @@ def run_ablation_study_gbt(
 
 
 def run_slice_error_analysis(predictions_val: DataFrame, slice_col: str, min_count: int = 500) -> pd.DataFrame:
-    """
-    Mục 5D: Phân tích lỗi theo lát cắt (Airline, hour, hoặc Top-20 AirportFrom).
-    Tính số chuyến, tỷ lệ trễ thực tế, Recall và False Negative Rate trên từng lát cắt.
-    """
+  
     pred_with_prob = predictions_val.withColumn("prob_delay", vector_to_array(F.col("probability"))[1])
     slice_df = (
         pred_with_prob.groupBy(slice_col)
