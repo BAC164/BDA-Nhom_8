@@ -1,22 +1,3 @@
-"""
-src/features.py — Module Kỹ thuật Đặc trưng & Pipeline (Chủ sở hữu: TV2 - Phase 3)
-Đề tài BDA_20 (Nhóm 8): Dự báo chuyến bay bị trễ (OpenML ID 1169 - Airlines)
-
-Đầu vào (từ Phase 2 - TV1 / bản bàn giao tv1_v1):
-  - splits/{train,val,test} (Parquet)
-    Các cột: row_id (long), Airline (string), Flight (string), AirportFrom (string),
-             AirportTo (string), DayOfWeek (string), Time (double), Length (double),
-             Delay (int: 0/1), Length_invalid (int: 0/1), và cột fold (int: 0..4, chỉ có trong train).
-
-Đầu ra (Phase 3 - Data Freeze v1):
-  1. Bảng đặc trưng Parquet: data/features/v1/{train,val,test}/
-  2. Bảng tra cứu (Lookup Maps) cho Demo (Phase 6): data/features/v1/lookup_maps/
-  3. Hai hàm tạo Pipeline chuẩn cho TV3 & TV4:
-     - make_pipeline_lr(...)
-     - make_pipeline_gbt(max_bins=300, ...)
-  4. Hàm kiểm thử chống rò rỉ nhãn (Leakage Test): verify_no_label_leakage(...)
-"""
-
 import os
 import json
 from typing import Tuple, Dict, Optional, List
@@ -29,32 +10,17 @@ from pyspark.ml.classification import LogisticRegression, GBTClassifier
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
 
 
-# ==============================================================================
-# 1. CẤU HÌNH MẶC ĐỊNH PHASE 3 (DATA FREEZE V1)
-# ==============================================================================
 SEED = 42
 NUM_FOLDS = 5
-SMOOTHING_M = 30.0           # Hệ số làm mượt m-estimate cho Target Encoding (20..50)
-MIN_COUNT_AIRPORT = 100      # Ngưỡng gộp nhóm hiếm OTHER cho sân bay (từ đường cong độ phủ EDA)
-MIN_COUNT_ROUTE = 50         # Ngưỡng gộp nhóm hiếm OTHER cho tuyến bay (route)
+SMOOTHING_M = 30.0          
+MIN_COUNT_AIRPORT = 100      
+MIN_COUNT_ROUTE = 50       
 
-
-# ==============================================================================
-# 2. CÁC HÀM BIẾN ĐỔI ĐẶC TRƯNG THÀNH PHẦN
-# ==============================================================================
 FORBIDDEN_PREDICTORS = {"Delay", "row_id", "fold"}
 
 
 def ensure_schema_and_fold(df: DataFrame, is_train: bool = False, seed: int = SEED) -> DataFrame:
-    """
-    Đảm bảo kiểu dữ liệu chuẩn khớp bản bàn giao tv1_v1 từ Phase 2:
-      - Delay -> int
-      - Length_invalid -> int (giữ nguyên cờ 4 dòng Length <= 0 từ TV1; nếu chưa có sẽ tự tạo)
-      - DayOfWeek, Flight, Airline, AirportFrom, AirportTo -> string
-      - Time, Length -> double
-      - row_id -> long
-      - Nếu là tập train và chưa có cột 'fold', tự động gán fold theo SHA256('fold:42:' + row_id) % 5.
-    """
+   
     out = (
         df
         .withColumn("Airline", F.col("Airline").cast(StringType()))
@@ -87,16 +53,7 @@ def ensure_schema_and_fold(df: DataFrame, is_train: bool = False, seed: int = SE
 
 
 def add_basic_features(df: DataFrame) -> DataFrame:
-    """
-    Nhiệm vụ 1: Tạo các đặc trưng cơ bản:
-      - hour (double): floor(Time / 60) -> dùng cho GBT
-      - hour_cat (string): chuỗi "0".."23" -> dùng cho One-Hot Encoding trong LR
-      - time_bucket (string): morning (5-11), afternoon (12-16), evening (17-20), night (21-4)
-      - is_weekend (double): 1.0 nếu DayOfWeek thuộc {"6", "7"}, ngược lại 0.0
-      - len_bin (string): short (<=90), medium (91-180), long (181-300), ultra_long (>300)
-      - route (string): AirportFrom + "_" + AirportTo
-      - airline_flight (string): Airline + "_" + Flight
-    """
+  
     hour_col = F.floor(F.col("Time") / 60.0)
     return (
         df
@@ -131,14 +88,6 @@ def compute_flight_density(
     test_df: DataFrame,
     fit_on_train_only: bool = True
 ) -> Tuple[DataFrame, DataFrame, DataFrame, DataFrame, DataFrame]:
-    """
-    Nhiệm vụ 2: Mật độ chuyến bay (Flight Density):
-      - density_from: số chuyến bay theo (AirportFrom, DayOfWeek, hour)
-      - density_to  : số chuyến bay theo (AirportTo, DayOfWeek, hour)
-    Mặc định fit_on_train_only=True để tuân thủ nghiêm ngặt quy tắc của TV1 (02_Read_Shared_Data.ipynb):
-    "Fit các bước học từ dữ liệu chỉ trên Train".
-    Cắt đứt lineage bằng localCheckpoint + broadcast join để tránh phình LogicalPlan.
-    """
     cols_needed = ["AirportFrom", "AirportTo", "DayOfWeek", "hour"]
     if fit_on_train_only:
         schedule_source = train_df.select(cols_needed)
@@ -180,12 +129,6 @@ def fit_and_apply_rare_grouping(
     min_count_airport: int = MIN_COUNT_AIRPORT,
     min_count_route: int = MIN_COUNT_ROUTE
 ) -> Tuple[DataFrame, DataFrame, DataFrame, Dict[str, List[str]]]:
-    """
-    Nhiệm vụ 3: Gộp nhóm hiếm (Rare Category Grouping):
-      - Các category xuất hiện ít hơn N dòng trong tập TRAIN được gộp thành "OTHER".
-      - Tạo các cột: AirportFrom_g, AirportTo_g, route_g.
-      - Dùng broadcast join thay cho .isin(2431 strings) để cây Catalyst luôn gọn nhẹ.
-    """
     valid_from_df = (
         train_df.groupBy("AirportFrom")
         .count()
@@ -236,15 +179,6 @@ def fit_and_apply_frequency_encoding(
     val_df: DataFrame,
     test_df: DataFrame
 ) -> Tuple[DataFrame, DataFrame, DataFrame, Dict[str, DataFrame]]:
-    """
-    Nhiệm vụ 4: Frequency Encoding:
-      - Tính log1p(count trong train) = ln(1 + count_train) cho:
-        + AirportFrom    -> log_freq_from
-        + AirportTo      -> log_freq_to
-        + route          -> log_freq_route
-        + airline_flight -> log_freq_flight
-      - Category chưa từng thấy (unseen) trong val/test nhận giá trị 0.0.
-    """
     specs = [
         ("AirportFrom", "log_freq_from"),
         ("AirportTo", "log_freq_to"),
@@ -274,14 +208,6 @@ def fit_and_apply_oof_target_encoding(
     test_df: DataFrame,
     m: float = SMOOTHING_M
 ) -> Tuple[DataFrame, DataFrame, DataFrame, float, Dict[str, DataFrame]]:
-    """
-    Nhiệm vụ 5: Target Encoding Out-of-Fold (OOF) với m-estimate smoothing (kể cả OOF prior):
-      - Trên tập TRAIN: cả thống kê nhóm lẫn prior toàn cục (oof_prior) của fold f
-        đều được tính CHỈ từ 4 folds còn lại.
-      - Trên tập VAL và TEST: dùng tổng và prior của toàn bộ tập TRAIN.
-      - Sử dụng localCheckpoint(eager=True) + broadcast join cho từng bảng map để cây Catalyst
-        giữ độ sâu tuyến tính O(1), không bao giờ bị tràn Heap Java.
-    """
     source_train = train_df
     global_agg = source_train.agg(
         F.sum(F.col("Delay").cast(DoubleType())).alias("total_S"),
@@ -369,9 +295,7 @@ def fit_and_apply_oof_target_encoding(
     return train_df, val_df, test_df, prior, full_te_maps
 
 
-# ==============================================================================
-# 3. HÀM TỔNG HỢP XÂY DỰNG BẢNG ĐẶC TRƯNG V1 & LƯU BẢNG TRA CỨU
-# ==============================================================================
+
 FEATURE_TABLE_COLUMNS = [
     # Định danh & Nhãn (không đưa vào features)
     "row_id", "Delay",
@@ -399,10 +323,6 @@ def build_features_v1(
     min_count_route: int = MIN_COUNT_ROUTE,
     fit_density_on_train_only: bool = True
 ) -> Tuple[DataFrame, DataFrame, DataFrame, dict]:
-    """
-    Thực thi toàn bộ quy trình Kỹ thuật Đặc trưng Phase 3 trên 3 tập train/val/test.
-    Trả về: (train_fe, val_fe, test_fe, artifacts_dict)
-    """
     train_df = ensure_schema_and_fold(train_raw, is_train=True)
     val_df = ensure_schema_and_fold(val_raw, is_train=False)
     test_df = ensure_schema_and_fold(test_raw, is_train=False)
@@ -458,10 +378,6 @@ def save_features_and_lookups(
     artifacts: dict,
     output_base_dir: str = "data/features/v1"
 ) -> None:
-    """
-    Ghi 3 bảng đặc trưng ra Parquet (KHÔNG ghi cột đã qua StringIndexer để giữ nguyên tính tổng quát)
-    và lưu toàn bộ bảng tra cứu (lookup_maps) phục vụ Demo ở Phase 6.
-    """
     os.makedirs(output_base_dir, exist_ok=True)
     for split_name, df_part in [("train", train_fe), ("val", val_fe), ("test", test_fe)]:
         out_path = os.path.join(output_base_dir, split_name)
@@ -470,8 +386,6 @@ def save_features_and_lookups(
 
     lookup_dir = os.path.join(output_base_dir, "lookup_maps")
     os.makedirs(lookup_dir, exist_ok=True)
-
-    # Lưu metadata & danh sách nhóm hợp lệ (JSON)
     meta_payload = {
         "prior": artifacts["prior"],
         "smoothing_m": artifacts["smoothing_m"],
@@ -484,7 +398,6 @@ def save_features_and_lookups(
     with open(os.path.join(lookup_dir, "encoding_metadata.json"), "w", encoding="utf-8") as f:
         json.dump(meta_payload, f, indent=2, ensure_ascii=False)
 
-    # Lưu các bảng tra cứu Target Encoding, Frequency Encoding, Flight Density
     for col_name, df_map in artifacts["full_te_maps"].items():
         df_map.write.mode("overwrite").parquet(os.path.join(lookup_dir, f"te_{col_name}.parquet"))
 
@@ -496,9 +409,6 @@ def save_features_and_lookups(
     print(f"[SAVE] Đã lưu đầy đủ bảng tra cứu (Lookup Maps) tại: {lookup_dir}")
 
 
-# ==============================================================================
-# 4. HAI HÀM TẠO PIPELINE CHUẨN CHO TV3 (LR) VÀ TV4 (GBT)
-# ==============================================================================
 def make_pipeline_lr(
     reg_param: float = 0.0,
     elastic_net_param: float = 0.0,
@@ -507,13 +417,6 @@ def make_pipeline_lr(
     include_length_invalid: bool = True,
     include_estimator: bool = True
 ) -> Pipeline:
-    """
-    Nhiệm vụ 6A: Tạo Pipeline chuẩn cho TV3 (Logistic Regression).
-    - Biến phân loại đưa vào OneHotEncoder: Airline, DayOfWeek, hour_cat (giờ ở dạng chuỗi).
-    - Biến số: Length, log_freq_from, log_freq_to, log_freq_route, density_from, density_to
-      (+ Length_invalid nếu include_length_invalid=True).
-    - Tuyệt đối không đưa Delay, row_id, fold vào danh sách cột đầu vào của VectorAssembler.
-    """
     cat_cols = ["Airline", "DayOfWeek", "hour_cat"]
     indexers = [
         StringIndexer(inputCol=c, outputCol=f"{c}_i", handleInvalid="keep")
@@ -570,14 +473,6 @@ def make_pipeline_gbt(
     include_length_invalid: bool = True,
     include_estimator: bool = True
 ) -> Pipeline:
-    """
-    Nhiệm vụ 6B: Tạo Pipeline chuẩn cho TV4 (GBTClassifier).
-    - Biến phân loại: Airline, DayOfWeek, AirportFrom_g, AirportTo_g.
-      StringIndexer nằm trực tiếp trong cùng Pipeline với VectorAssembler & GBTClassifier
-      để giữ nguyên metadata 'nominal' cho các nút cây quyết định.
-    - max_bins mặc định = 300 (>= số lượng category tối đa của AirportFrom_g/AirportTo_g).
-    - Tuyệt đối không đưa Delay, row_id, fold vào danh sách cột đầu vào của VectorAssembler.
-    """
     cat_cols = ["Airline", "DayOfWeek", "AirportFrom_g", "AirportTo_g"]
     indexers = [
         StringIndexer(inputCol=c, outputCol=f"{c}_i", handleInvalid="keep")
@@ -621,9 +516,8 @@ def make_pipeline_gbt(
     return Pipeline(stages=stages)
 
 
-# ==============================================================================
-# 5. KIỂM THỬ CHỐNG RÒ RỈ NHÃN (NHIỆM VỤ 8 - BẮT BUỘC)
-# ==============================================================================
+
+#  KIỂM THỬ CHỐNG RÒ RỈ NHÃN 
 def verify_no_label_leakage(
     train_raw: DataFrame,
     train_fe: DataFrame,
@@ -631,12 +525,7 @@ def verify_no_label_leakage(
     prior: float,
     m: float = SMOOTHING_M
 ) -> dict:
-    """
-    Nhiệm vụ 8: Thực hiện 3 bài kiểm thử bắt buộc để chứng minh KHÔNG rò rỉ nhãn (Label Leakage):
-      1. Đối chiếu thủ công giá trị te_route trên tập VAL với công thức (S + m*prior)/(N + m) tính trực tiếp từ train_raw.
-      2. Đối chiếu thủ công giá trị OOF te_route trên tập TRAIN với công thức dùng 4 folds còn lại (gồm cả OOF prior).
-      3. Huấn luyện mô hình chỉ gồm duy nhất đặc trưng `te_route` rồi so sánh ROC-AUC trên Train và ROC-AUC trên Val.
-    """
+    
     print("\n=== BẮT ĐẦU KIỂM THỬ CHỐNG RÒ RỈ NHÃN (LABEL LEAKAGE CHECKS) ===")
 
     # --- Kiểm thử 1: Đối chiếu thủ công 5 tuyến bay trong tập VAL ---

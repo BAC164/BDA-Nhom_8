@@ -26,3 +26,18 @@ Nếu chưa có quyền truy cập, liên hệ Thịnh.
   không diễn giải kết quả thành khả năng dự báo tương lai/lịch bay mới.
 
 Bảng kiểm tra, biểu đồ và nhận xét nằm trong `reports/` trên Drive.
+
+
+---
+
+## TV2 — Hùng
+Đã hoàn thành phần EDA phối hợp (Phase 1) và Feature Engineering & Đóng băng `features_v1` (Phase 3).
+
+Code / tài liệu bàn giao:
+- `01_eda_tv2_part.ipynb` & `eda_tv2_phase1.py`: EDA phần TV2 (`eda_findings.md`, `reports/eda/`).
+- `03_features_tv2.ipynb` & `features.py`: tạo đặc trưng `features_v1`, pipeline `make_pipeline_lr()` / `make_pipeline_gbt()`, kiểm định rò rỉ nhãn.
+- `feature_spec.md` & `CHANGELOG_FEATURES.md`: đặc tả 30 cột (`val`/`test`) và 31 cột (`train` gồm `fold`).
+
+### Dữ liệu TV2
+https://drive.google.com/drive/folders/1ksFuS9Ox4Juok_fw4b0ZuOGf-2rnvPGE?usp=drive_link
+Đọc `feature_spec.md`, sửa đường dẫn tới `01_data_frozen/features_v1` trên Drive của mình để chạy tiếp Phase 4–6.
