@@ -1,19 +1,3 @@
-"""
-src/eda_tv2_phase1.py — Module Khảo sát Dữ liệu (EDA) phần việc của TV2 ở Phase 1
-Nhiệm vụ của TV2 trong Phase 1 (Phối hợp với TV1):
-  1. Vẽ Heatmap tương tác: Tỷ lệ trễ theo Giờ (hour) × Ngày trong tuần (DayOfWeek).
-  2. Vẽ Heatmap tương tác: Tỷ lệ trễ theo Hãng bay (Airline) × Giờ (hour).
-  3. Phân tích đuôi dài (Long-tail Cumulative Coverage):
-     - Vẽ đường cong độ phủ lũy kế cho Top-k Sân bay (AirportFrom/AirportTo), Tuyến bay (route), Số hiệu chuyến (airline_flight).
-     - Xác định và đề xuất ngưỡng gộp nhóm hiếm "OTHER" (N dòng) cho Phase 3.
-  4. Xếp hạng Sân bay / Tuyến bay có >= 1,000 chuyến kèm Khoảng tin cậy Wilson 95% (Wilson Score CI).
-
-Lưu ý kỹ thuật:
-  - Mọi phép tổng hợp (groupBy + count + avg) đều chạy trên Spark DataFrame trước,
-    chỉ gọi .toPandas() trên bảng tổng hợp nhỏ (vài chục đến vài nghìn dòng),
-    TUYỆT ĐỐI KHÔNG gọi .toPandas() trên dữ liệu thô 539,383 dòng.
-"""
-
 import os
 import math
 import numpy as np
@@ -30,8 +14,6 @@ except ImportError:
     SparkSession = None
     DataFrame = object
     F = None
-
-
 
 def wilson_ci_95(p_hat: np.ndarray, n: np.ndarray, z: float = 1.96):
     """
@@ -196,9 +178,6 @@ def _save_longtail_and_wilson(
 
 
 def plot_heatmap_hour_x_dayofweek(df: DataFrame, out_dir: str) -> pd.DataFrame:
-    """
-    Nhiệm vụ 1: Heatmap tỷ lệ trễ theo Giờ (0..23) × Ngày trong tuần (1=Thứ Hai .. 7=Chủ Nhật).
-    """
     agg_pdf = (
         df.groupBy("hour", "DayOfWeek")
         .agg(
@@ -213,9 +192,6 @@ def plot_heatmap_hour_x_dayofweek(df: DataFrame, out_dir: str) -> pd.DataFrame:
 
 
 def plot_heatmap_airline_x_hour(df: DataFrame, out_dir: str, min_cell_flights: int = 30) -> pd.DataFrame:
-    """
-    Nhiệm vụ 2: Heatmap tỷ lệ trễ theo Hãng bay (Airline - 18 hãng) × Giờ (hour = 5..23).
-    """
     agg_pdf = (
         df.filter((F.col("hour") >= 5) & (F.col("hour") <= 23))
         .groupBy("Airline", "hour")
@@ -230,9 +206,6 @@ def plot_heatmap_airline_x_hour(df: DataFrame, out_dir: str, min_cell_flights: i
 
 
 def analyze_long_tail_and_thresholds(df: DataFrame, out_dir: str) -> pd.DataFrame:
-    """
-    Nhiệm vụ 3 & 4: Phân tích đuôi dài (Long-tail Cumulative Coverage) và Wilson 95% CI.
-    """
     total_rows = df.count()
     cols_to_check = ["AirportFrom", "AirportTo", "route", "airline_flight"]
     freq_dfs = {}
@@ -252,9 +225,7 @@ def analyze_long_tail_and_thresholds(df: DataFrame, out_dir: str) -> pd.DataFram
 
 
 def run_tv2_phase1_eda_pandas(parquet_path: str = "data/dataset_1169.pq", out_dir: str = "reports/eda") -> pd.DataFrame:
-    """
-    Thực thi tính toán bảng tổng hợp & vẽ 4 biểu đồ PNG chuẩn Phase 1 (TV2) trực tiếp trên 539,383 dòng.
-    """
+  
     os.makedirs(out_dir, exist_ok=True)
     df = pd.read_parquet(parquet_path)
     df["Airline"] = df["Airline"].astype(str)
